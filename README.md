@@ -19,64 +19,35 @@ This repo contains code for training and reproducing sim environment experiments
 
 ## Setup
 
-Create the conda environment (this installs everything, including the CUDA build of PyTorch):
-
-```
-conda env create -f conda_env.yml
-conda activate patch-policy
-```
-
-Tested on Ubuntu 22.04 with CUDA 12.8. To log training runs, log in to Weights & Biases with `wandb login` (or set `export WANDB_MODE=disabled` to turn logging off). In `./configs/env_vars/env_vars.yaml`, set `wandb_entity` to your wandb username.
-
-### Intel XPU Support
-
-Patch Policy training and LIBERO Goal evaluation are supported on Intel GPUs
-through the PyTorch XPU backend. The simulator runs on the CPU, while the
-frozen visual encoder and policy run on `xpu:0` through Accelerate.
-
-**Requirements**
-
-- Python 3.12
-- PyTorch `2.13.0+xpu`
-- A supported Intel GPU with the matching Intel GPU runtime and oneAPI drivers
-- The LIBERO assets configured as described below
-
-The repository's `conda_env.yml` installs CUDA PyTorch. Keep that environment
-for CUDA and create the separate XPU environment from `conda_env_xpu.yml`:
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/), then
+create the project environment from the committed lockfile:
 
 ```bash
-conda env create -f conda_env_xpu.yml
-conda activate patch-policy-xpu
+uv sync --locked
 ```
 
-The validated XPU environment uses Python 3.12, PyTorch `2.13.0+xpu`, Accelerate `1.14.0`,
-MuJoCo `3.2.7`, and robosuite `1.4.1`.
+uv downloads the Python version pinned in `.python-version` when needed and
+creates `.venv/` with the CUDA 12.8 build of PyTorch. Runtime dependencies are
+declared in `pyproject.toml`; `uv.lock` pins the complete dependency graph.
+Use `uv run` for commands below so they run in this environment.
 
-Verify the backend before starting a run:
+Tested on Ubuntu 22.04 with CUDA 12.8. A compatible NVIDIA driver is required;
+uv manages Python packages, while GPU drivers and system OpenGL/EGL libraries
+must be installed separately. For the V-JEPA 2 video encoder, install FFmpeg
+shared libraries (for example, `sudo apt-get install ffmpeg` on Ubuntu).
+
+To log training runs, log in to Weights & Biases with `uv run wandb login`
+(or set `export WANDB_MODE=disabled` to turn logging off). In
+`./configs/env_vars/env_vars.yaml`, set `wandb_entity` to your wandb username.
+
+Verify the CUDA backend before starting a run:
 
 ```bash
-python -c "import torch; print(torch.__version__, torch.xpu.is_available())"
+uv run python -c "import torch; print(torch.__version__, torch.cuda.is_available())"
 ```
 
-Download and unpack the datasets as described in [Datasets](#datasets), then
-run the LIBERO Goal configuration with `device=xpu`:
-
-```bash
-MUJOCO_GL=egl WANDB_MODE=disabled python -u train_policy.py \
-   --config-name train_libero_goal_1gpu \
-   device=xpu \
-   env_vars.dataset_root=/path/to/patch_policy_datasets \
-   env_vars.save_path=/path/to/patch_policy_outputs \
-   epochs=10 eval_on_env_freq=5 num_env_evals=10 num_final_evals=50 num_envs=5 \
-   +dataset.subset_fraction=1.0
-```
-
-The XPU path was validated on the LIBERO Goal task with 10 tasks and one
-episode per final evaluation. The run produced loadable `model_final.pt`
-checkpoints and finite actions, with 50% final-evaluation success; an
-epoch-10 evaluation reached 100%. The validation run used `subset_fraction=1.0` and
-5 parallel environments. Simulation remains CPU/EGL, and `WANDB_MODE=disabled`
-can be used when W&B logging is not configured.
+Run the tests with `uv run python -m pytest tests`. After intentionally changing
+dependencies in `pyproject.toml`, run `uv lock` and commit the updated lockfile.
 
 ## Datasets
 
@@ -92,13 +63,10 @@ The datasets for all four simulation environments are hosted on the Hugging Face
 
 ### Download
 
-1. Install the Hugging Face Hub CLI:
-   ```
-   pip install "huggingface_hub==0.36.2"
-   ```
+1. The Hugging Face Hub CLI is included in the project environment.
 2. Download the dataset repo to a local directory (this is the directory all four datasets will live in):
    ```
-   huggingface-cli download gaoyuezhou/patch-policy-datasets \
+   uv run huggingface-cli download gaoyuezhou/patch-policy-datasets \
      --repo-type dataset --local-dir patch_policy_datasets
    ```
    To download only a subset, add e.g. `--include "pusht_dataset.zip"`.
@@ -130,10 +98,10 @@ patch_policy_datasets/
 Policy training and online evaluation both run through `train_policy.py`, driven by the configs in `configs/`. A run trains the policy on top of a **frozen visual encoder** and periodically rolls it out in the simulator.
 
 ```
-python train_policy.py --config-name train_pusht        # Push-T
-python train_policy.py --config-name train_blockpush    # Block Pushing
-python train_policy.py --config-name train_cube         # Cube
-MUJOCO_GL=egl python train_policy.py --config-name train_libero_goal   # LIBERO Goal
+uv run python train_policy.py --config-name train_pusht        # Push-T
+uv run python train_policy.py --config-name train_blockpush    # Block Pushing
+uv run python train_policy.py --config-name train_cube         # Cube
+MUJOCO_GL=egl uv run python train_policy.py --config-name train_libero_goal   # LIBERO Goal
 ```
 
 - **Diffusion policy** variants are available for every environment — append `_diffusion` to the config name (e.g. `train_pusht_diffusion`). The default configs use a VQ-BeT policy head.
@@ -145,10 +113,10 @@ The config names above assume a node of 8 GPUs. We also provide `_1gpu` variants
 every config, tuned to fit within 32 GB of VRAM:
 
 ```
-python train_policy.py --config-name train_pusht_1gpu
-python train_policy.py --config-name train_blockpush_1gpu
-python train_policy.py --config-name train_cube_1gpu
-MUJOCO_GL=egl python train_policy.py --config-name train_libero_goal_1gpu
+uv run python train_policy.py --config-name train_pusht_1gpu
+uv run python train_policy.py --config-name train_blockpush_1gpu
+uv run python train_policy.py --config-name train_cube_1gpu
+MUJOCO_GL=egl uv run python train_policy.py --config-name train_libero_goal_1gpu
 ```
 
 These runs use DINOv2 ViT-S (`dino_patch`) and precompute the frozen encoder's
@@ -164,15 +132,15 @@ Launcher configs for submitting to a SLURM cluster are in `configs/cluster/`.
 The encoder is frozen and selected via the `encoder` config group (`configs/encoder/`); off-the-shelf encoders need no training. The default is DINOv2 patch features (`dino_patch`). Override it on the command line:
 
 ```
-python train_policy.py --config-name train_pusht encoder=webssl_patch
-python train_policy.py --config-name train_pusht encoder=vjepa2_patch
-python train_policy.py --config-name train_pusht encoder=dinov3_patch
-python train_policy.py --config-name train_pusht encoder=siglip2_patch
+uv run python train_policy.py --config-name train_pusht encoder=webssl_patch
+uv run python train_policy.py --config-name train_pusht encoder=vjepa2_patch
+uv run python train_policy.py --config-name train_pusht encoder=dinov3_patch
+uv run python train_policy.py --config-name train_pusht encoder=siglip2_patch
 ```
 
 Each of these uses dense patch features. Two pooled variants are also provided for comparison: `*_patch_avg_pool` (patch tokens mean-pooled into a single vector) is available for every encoder above as well as `dino`, and `*_cls` (the CLS token instead of patch tokens) is available for `dino`, `dinov3`, and `webssl`. ResNet-18 baselines (`resnet18_imagenet`, `resnet18_random`) and pretrained [DynaMo](https://dynamo-ssl.github.io/) encoders are also supported — see `configs/encoder/` for the full list.
 
-> **Note (DINOv3):** the DINOv3 weights are hosted in a gated Hugging Face repo. To use the `dinov3_*` encoders, request access at [facebook/dinov3-vits16plus-pretrain-lvd1689m](https://huggingface.co/facebook/dinov3-vits16plus-pretrain-lvd1689m) and log in with `hf auth login` before launching.
+> **Note (DINOv3):** the DINOv3 weights are hosted in a gated Hugging Face repo. To use the `dinov3_*` encoders, request access at [facebook/dinov3-vits16plus-pretrain-lvd1689m](https://huggingface.co/facebook/dinov3-vits16plus-pretrain-lvd1689m) and log in with `uv run hf auth login` before launching.
 
 ## Citation
 
