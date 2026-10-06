@@ -15,6 +15,8 @@ dependencies = [
     "easydict==1.9",
     "egl-probe==1.0.2; sys_platform == 'linux'",
     "einops==0.8.2",
+    # BDDL 1.0.1 imports future.utils but does not declare the dependency.
+    "future==0.18.2",
     "gym==0.23.1",
     "gymnasium==1.1.1",
     "h5py==3.11.0",
@@ -65,7 +67,11 @@ dev = ["pytest==8.2.1"]
 
 [tool.uv]
 package = false
-environments = ["sys_platform == 'linux'", "sys_platform == 'win32'"]
+# CUDA and TorchCodec wheels in this environment target x86-64 machines.
+environments = [
+    "sys_platform == 'linux' and platform_machine == 'x86_64'",
+    "sys_platform == 'win32' and platform_machine == 'AMD64'",
+]
 
 [tool.uv.sources]
 torch = { index = "pytorch-cu128" }

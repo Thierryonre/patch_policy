@@ -27,7 +27,8 @@ uv sync --locked
 ```
 
 uv downloads the Python version pinned in `.python-version` when needed and
-creates `.venv/` with the CUDA 12.8 build of PyTorch. Runtime dependencies are
+creates `.venv/` with the CUDA 12.8 build of PyTorch. The dependency
+environment targets x86-64 Linux and Windows machines. Runtime dependencies are
 declared in `pyproject.toml`; `uv.lock` pins the complete dependency graph.
 Use `uv run` for commands below so they run in this environment.
 
